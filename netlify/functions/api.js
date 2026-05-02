@@ -23,12 +23,21 @@ app.use(express.urlencoded({ extended: true }));
 let cachedCities = null;
 function loadCities() {
   if (cachedCities) return cachedCities;
-  const p = path.join(__dirname, '../../data/cities.json');
-  if (fs.existsSync(p)) {
-    cachedCities = JSON.parse(fs.readFileSync(p, 'utf-8'));
-  } else {
-    cachedCities = [];
+  const possiblePaths = [
+    path.join(__dirname, '../../data/cities.json'),
+    path.join(__dirname, '../data/cities.json'),
+    path.join(process.cwd(), 'data/cities.json'),
+    '/var/task/data/cities.json',
+  ];
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        cachedCities = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        return cachedCities;
+      }
+    } catch (e) {}
   }
+  cachedCities = [];
   return cachedCities;
 }
 
