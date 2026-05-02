@@ -5,6 +5,10 @@
 
 [functions]
   node_bundler = "esbuild"
+  included_files = ["src/**/*", "data/**/*"]
+
+[functions."*"]
+  max_duration = 60
 
 [[redirects]]
   from = "/api/*"
