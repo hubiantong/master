@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Master - AI 智能东方智慧解析系统" />
+    <meta name="theme-color" content="#6366f1" />
+    <title>Master · AI 命理分析</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+  </head>
+  <body>
+    <div class="bg-glow glow-a"></div>
+    <div class="bg-glow glow-b"></div>
+
+    <header class="topbar shell">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">命</div>
+        <div>
+          <h1>Master</h1>
+          <p>AI 智能 · 东方智慧解析系统</p>
+        </div>
+      </div>
+      <span class="top-tag">免登录 · 免订阅</span>
+    </header>
+
+    <section class="hero shell card">
+      <div class="hero-left">
+        <p class="hero-kicker">核心理念</p>
+        <h2>以 AI 之力，解析东方智慧</h2>
+        <p class="hero-text">
+          融合现代算法与传统命理文化，提供八字、紫微、六爻、塔罗等多维度分析。
+          无需注册，即刻体验，帮助您从全新视角审视自我、关系与决策。
+        </p>
+      </div>
+      <div class="hero-right">
+        <p class="quote">"除非你意识到你的潜意识，否则潜意识将主导你的人生，而你将其称为命运。"</p>
+        <p class="quote-author">— 卡尔·荣格</p>
+      </div>
+    </section>
+
+    <main class="shell workspace">
+      <section class="card module-zone" aria-label="模块选择">
+        <div class="zone-head">
+          <div>
+            <h3>智能解析服务</h3>
+            <p>共 <span id="module-count">0</span> 个模块，点击卡片切换</p>
+          </div>
+          <span id="active-module-api" class="api-chip">等待选择</span>
+        </div>
+        <div id="module-list" class="module-grid" role="list"></div>
+      </section>
+
+      <div class="work-grid">
+        <section class="card panel" aria-label="输入面板">
+          <div class="panel-head">
+            <h3 id="module-title">请选择模块</h3>
+            <p id="module-desc">下方将展示该模块对应的输入项</p>
+          </div>
+
+          <form id="dynamic-form" autocomplete="off"></form>
+
+          <div class="actions">
+            <button id="submit-btn" type="button">开始分析</button>
+            <button id="copy-btn" type="button" class="ghost" style="display: none;">复制结果</button>
+            <button id="reset-btn" type="button" class="ghost">重置输入</button>
+          </div>
+        </section>
+
+        <section class="card result-wrap" aria-label="分析结果">
+          <div class="result-head">
+            <h3>分析结果</h3>
+            <span class="muted">AI 分析输出</span>
+          </div>
+          <div id="result" role="region" aria-live="polite">等待输入...</div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer shell">
+      <p>本项目仅用于体验与自我觉察，不构成现实决策依据。</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
