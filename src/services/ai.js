@@ -81,7 +81,7 @@ function aiSettings() {
     thinking_budget_tokens: parseInt(process.env.LLM_THINKING_BUDGET_TOKENS || "1024", 10),
     max_tokens: parseInt(process.env.LLM_MAX_TOKENS || "1024", 10),
     anthropic_version: process.env.LLM_ANTHROPIC_VERSION || "2023-06-01",
-    timeout_sec: parseInt(process.env.LLM_TIMEOUT_SEC || "120", 10)
+    timeout_sec: parseInt(process.env.LLM_TIMEOUT_SEC || "8", 10)
   };
 }
 
@@ -218,6 +218,125 @@ async function callOpenAiProtocol(systemPrompt, userPrompt, cfg) {
   } catch (err) {
     console.warn("openai protocol call failed:", err.message);
     return null;
+  }
+}
+
+async function* callOpenAiProtocolStream(systemPrompt, userPrompt, cfg) {
+  const apiKey = cfg.api_key_openai;
+  if (!apiKey) return;
+
+  const url = `${cfg.base_url_openai.replace(/\/$/, '')}/chat/completions`;
+  const timeoutMs = cfg.timeout_sec * 1000;
+
+  const payload = {
+    model: cfg.model_openai,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ],
+    temperature: 0.5,
+    stream: true
+  };
+
+  const headers = {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  };
+
+  try {
+    const resp = await axios.post(url, payload, { 
+      headers, 
+      timeout: timeoutMs,
+      responseType: 'stream'
+    });
+
+    const stream = resp.data;
+    let buffer = '';
+
+    for await (const chunk of stream) {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) {
+            yield content;
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    console.warn("openai protocol stream call failed:", err.message);
+  }
+}
+
+async function* callAnthropicProtocolStream(systemPrompt, userPrompt, cfg) {
+  const apiKey = cfg.api_key_anthropic;
+  if (!apiKey) return;
+
+  const url = `${cfg.base_url_anthropic.replace(/\/$/, '')}/messages`;
+  const timeoutMs = cfg.timeout_sec * 1000;
+
+  const payload = {
+    model: cfg.model_anthropic,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+    max_tokens: cfg.max_tokens,
+    stream: true
+  };
+
+  const headers = {
+    "x-api-key": apiKey,
+    "anthropic-version": cfg.anthropic_version,
+    "Content-Type": "application/json"
+  };
+
+  try {
+    const resp = await axios.post(url, payload, { 
+      headers, 
+      timeout: timeoutMs,
+      responseType: 'stream'
+    });
+
+    const stream = resp.data;
+    let buffer = '';
+
+    for await (const chunk of stream) {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'content_block_delta') {
+            const text = parsed.delta?.text;
+            if (text) yield text;
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    console.warn("anthropic protocol stream call failed:", err.message);
+  }
+}
+
+async function* callExternalLlmStream(systemPrompt, userPrompt) {
+  const cfg = aiSettings();
+  if (cfg.protocol === "anthropic") {
+    yield* callAnthropicProtocolStream(systemPrompt, userPrompt, cfg);
+  } else {
+    yield* callOpenAiProtocolStream(systemPrompt, userPrompt, cfg);
   }
 }
 
@@ -368,4 +487,48 @@ async function attachAiLayer(moduleName, userInput, result, referenceDate = null
   return sanitizeResponsePayload(merged);
 }
 
-module.exports = { attachAiLayer, aiSettings };
+module.exports = { attachAiLayer, aiSettings, attachAiLayerStream };
+
+async function attachAiLayerStream(moduleName, userInput, result, referenceDate = null) {
+  const prompt = buildAiPrompt(moduleName, userInput, result, referenceDate);
+  const timeCtx = timeContext(referenceDate);
+  const highlights = resultHighlights(result);
+  const knowledge = AI_KNOWLEDGE[moduleName] || ["理性表达，避免绝对化。", "输出可执行建议。"];
+  
+  const aiTextFallback = [
+    `结合${timeCtx.weekday}（${timeCtx.time_period}）与当前节律，建议先聚焦最关键的一件事。`,
+    "从本次结果看，优先处理可控变量，再处理情绪变量，会更稳健。",
+    "本周行动建议：1) 明确目标与边界 2) 固定复盘节奏 3) 关键沟通提前约定规则。"
+  ];
+  if (highlights.length > 0) {
+    aiTextFallback.unshift(`关键洞察：${highlights[0]}`);
+  }
+
+  const systemPrompt = "你是理性、克制、可执行导向的命理分析助手。请使用中文。不要神化、不要绝对化、不要恐吓用户，输出聚焦可执行建议。";
+
+  const merged = { ...result };
+  const cfg = aiSettings();
+  const activeModel = cfg.protocol === "anthropic" ? cfg.model_anthropic : cfg.model_openai;
+  const llmEnabledPublic = ["1", "true", "yes", "on"].includes((process.env.LLM_ENABLED || "true").toLowerCase());
+
+  merged.ai = {
+    prompt_version: "v2.2",
+    provider: cfg.provider,
+    protocol: cfg.protocol,
+    model: activeModel,
+    deep_thinking_enabled: cfg.deep_thinking === "true",
+    reasoning_effort: cfg.reasoning_effort,
+    llm_enabled: llmEnabledPublic,
+    llm_response_mode: "streaming",
+    time_context: timeCtx,
+    knowledge_points: knowledge,
+    optimized_prompt: prompt,
+    analysis_markdown: "",
+    analysis: []
+  };
+
+  return {
+    data: sanitizeResponsePayload(merged),
+    stream: callExternalLlmStream(systemPrompt, prompt)
+  };
+}
