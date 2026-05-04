@@ -172,13 +172,17 @@ function buildAiPrompt(moduleName, userInput, result, referenceDate) {
 
 async function callOpenAiProtocol(systemPrompt, userPrompt, cfg) {
   const apiKey = cfg.api_key_openai;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.warn("openai protocol call failed: no api key");
+    return null;
+  }
 
   const url = `${cfg.base_url_openai.replace(/\/$/, '')}/chat/completions`;
   const timeoutMs = cfg.timeout_sec * 1000;
-  const deepThinking = cfg.deep_thinking === "true";
 
-  const payloadBase = {
+  console.log(`[AI] Calling OpenAI protocol: url=${url}, model=${cfg.model_openai}, timeout=${timeoutMs}ms`);
+
+  const payload = {
     model: cfg.model_openai,
     messages: [
       { role: "system", content: systemPrompt },
@@ -187,36 +191,38 @@ async function callOpenAiProtocol(systemPrompt, userPrompt, cfg) {
     temperature: 0.5
   };
 
-  let payloadWithReasoning = { ...payloadBase };
-  if (deepThinking) {
-    payloadWithReasoning.reasoning_effort = cfg.reasoning_effort;
-    payloadWithReasoning.thinking = {
-      type: "enabled",
-      budget_tokens: cfg.thinking_budget_tokens
-    };
-  }
-
-  const headers = {
-    "Authorization": `Bearer ${apiKey}`,
-    "Content-Type": "application/json"
-  };
-
   try {
-    let resp;
-    try {
-      resp = await axios.post(url, payloadWithReasoning, { headers, timeout: timeoutMs });
-    } catch (err) {
-      if (deepThinking && err.response && err.response.status >= 400) {
-        resp = await axios.post(url, payloadBase, { headers, timeout: timeoutMs });
-      } else {
-        throw err;
-      }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`[AI] OpenAI protocol failed: status=${response.status}, body=${errorText.substring(0, 500)}`);
+      return null;
     }
-    
-    const content = resp.data.choices?.[0]?.message?.content || "";
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || "";
+    console.log(`[AI] OpenAI protocol success, content length: ${content.length}`);
     return content.trim() || null;
   } catch (err) {
-    console.warn("openai protocol call failed:", err.message);
+    if (err.name === 'AbortError') {
+      console.warn(`[AI] OpenAI protocol timeout after ${timeoutMs}ms`);
+    } else {
+      console.warn(`[AI] openai protocol call failed: message=${err.message}`);
+    }
     return null;
   }
 }
